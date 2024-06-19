@@ -16,4 +16,4 @@ For each message received, it will try to:
 - `go build`
 - `./quick-sqs-scanner -help`
 
-Alternatively, pick up the zipfile from Releases
+Alternatively, pick up the zipfile from Releases - nothing extra needed to install, just pick the right executable for your platform and off you go!

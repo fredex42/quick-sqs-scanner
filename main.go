@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/TylerBrock/colorjson"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -37,6 +38,9 @@ func FindQueue(client *sqs.Client, name *string) (string, error) {
 		for _, url := range response.QueueUrls {
 			log.Printf("\t%s", url)
 		}
+		if len(response.QueueUrls) == 20 { //we limited the request to 20
+			log.Printf("There may be more than this, we hit the request limit.")
+		}
 		return "", errors.New("Please narrow down your search by providing a specific name")
 	}
 
@@ -61,9 +65,23 @@ func Decode(msgBody *string) *string {
 	return msgBody
 }
 
-func PrettyPrint(f *colorjson.Formatter, msg *string) {
+//	func recursiveTruncate(obj *map[string]interface{}, currentField string, remainingFields []string) {
+//		if value, haveField :=
+//	}
+func PrettyPrint(f *colorjson.Formatter, msg *string, truncateFields *[]string, truncateAt *int) {
 	var obj map[string]interface{}
 	err := json.Unmarshal([]byte(*msg), &obj)
+
+	if truncateFields != nil {
+		for _, field := range *truncateFields {
+			if value, haveField := obj[field]; haveField {
+				if stringValue, valueIsString := value.(string); valueIsString && len(stringValue) > *truncateAt {
+					obj[field] = fmt.Sprintf("%s...", stringValue[0:*truncateAt])
+				}
+			}
+		}
+	}
+
 	if err == nil {
 		str, _ := colorjson.Marshal(obj)
 		fmt.Println(string(str))
@@ -74,6 +92,8 @@ func PrettyPrint(f *colorjson.Formatter, msg *string) {
 
 func main() {
 	queueName := flag.String("queue", "", "name of the queue you want to listen to")
+	truncateFieldsStr := flag.String("truncate", "", "optionally set a list of field names to be truncated in the output. Separate with commas and don't pad with whitespace")
+	truncateAt := flag.Int("truncateAt", 36, "truncate string fields over this length, if they are listed in `truncate`")
 	flag.Parse()
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
@@ -92,6 +112,12 @@ func main() {
 
 	jsonFormatter := colorjson.NewFormatter()
 
+	var truncateFieldsPtr *[]string
+	if *truncateFieldsStr != "" {
+		temp := strings.Split(*truncateFieldsStr, ",")
+		truncateFieldsPtr = &temp
+	}
+
 	for {
 		req := &sqs.ReceiveMessageInput{
 			QueueUrl:        &url,
@@ -106,7 +132,7 @@ func main() {
 		for _, msg := range messages.Messages {
 			if msg.Body != nil {
 				decoded := Decode(msg.Body)
-				PrettyPrint(jsonFormatter, decoded)
+				PrettyPrint(jsonFormatter, decoded, truncateFieldsPtr, truncateAt)
 			}
 			client.DeleteMessage(context.Background(), &sqs.DeleteMessageInput{
 				QueueUrl:      &url,

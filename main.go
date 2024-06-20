@@ -65,20 +65,29 @@ func Decode(msgBody *string) *string {
 	return msgBody
 }
 
-//	func recursiveTruncate(obj *map[string]interface{}, currentField string, remainingFields []string) {
-//		if value, haveField :=
-//	}
+func recursiveTruncate(obj *map[string]interface{}, currentField string, remainingFields []string, truncateAt *int) {
+	if value, haveField := (*obj)[currentField]; haveField {
+		if mapValue, valueIsMap := value.(map[string]interface{}); valueIsMap && len(remainingFields) > 0 {
+			recursiveTruncate(&mapValue, remainingFields[0], remainingFields[1:], truncateAt)
+		}
+		if stringValue, valueIsString := value.(string); valueIsString && len(stringValue) > *truncateAt {
+			(*obj)[currentField] = fmt.Sprintf("%s… (%d chars)", stringValue[0:*truncateAt], len(stringValue))
+		}
+	}
+}
+
 func PrettyPrint(f *colorjson.Formatter, msg *string, truncateFields *[]string, truncateAt *int) {
 	var obj map[string]interface{}
 	err := json.Unmarshal([]byte(*msg), &obj)
 
 	if truncateFields != nil {
 		for _, field := range *truncateFields {
-			if value, haveField := obj[field]; haveField {
-				if stringValue, valueIsString := value.(string); valueIsString && len(stringValue) > *truncateAt {
-					obj[field] = fmt.Sprintf("%s...", stringValue[0:*truncateAt])
-				}
+			fieldParts := strings.Split(field, ".")
+			var tail []string
+			if len(fieldParts) > 1 {
+				tail = fieldParts[1:]
 			}
+			recursiveTruncate(&obj, fieldParts[0], tail, truncateAt)
 		}
 	}
 
@@ -92,7 +101,7 @@ func PrettyPrint(f *colorjson.Formatter, msg *string, truncateFields *[]string, 
 
 func main() {
 	queueName := flag.String("queue", "", "name of the queue you want to listen to")
-	truncateFieldsStr := flag.String("truncate", "", "optionally set a list of field names to be truncated in the output. Separate with commas and don't pad with whitespace")
+	truncateFieldsStr := flag.String("truncate", "", "optionally set a list of field names to be truncated in the output. Separate with commas and don't pad with whitespace. If you need to specify multiple levels, separate them with a . (e.g. `details.event`)")
 	truncateAt := flag.Int("truncateAt", 36, "truncate string fields over this length, if they are listed in `truncate`")
 	flag.Parse()
 
